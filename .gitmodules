@@ -1,0 +1,6 @@
+[submodule "proto/submodules/tensorboard"]
+	path = proto/submodules/tensorboard
+	url = git@github.com:tensorflow/tensorboard.git
+[submodule "proto/submodules/tensorboard-data-server"]
+	path = proto/submodules/tensorboard-data-server
+	url = git@github.com:wchargin/tensorboard-data-server.git
