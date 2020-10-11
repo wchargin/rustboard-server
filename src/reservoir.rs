@@ -45,7 +45,7 @@ type Step = i64;
 ///
 /// [reservoir sampling]: https://en.wikipedia.org/wiki/Reservoir_sampling
 #[derive(Debug)]
-pub struct StageReservoir<T, C> {
+pub struct StageReservoir<T, C = ChaCha20Rng> {
     /// Steps of items currently in the reservoir whose values have already been committed. Stored
     /// in step-sorted order, and all steps in `committed_steps` precede all steps in
     /// `staged_items`.
@@ -145,6 +145,16 @@ impl<T, C> StageReservoir<T, C> {
             ctl,
             seen: 0,
         }
+    }
+
+    /// Access a view of the currently staged items.
+    pub fn staged_items(&self) -> &Vec<(Step, T)> {
+        &self.staged_items
+    }
+
+    /// Check whether a preemption has been staged.
+    pub fn staged_preemption(&self) -> bool {
+        self.staged_preemption
     }
 
     fn preempt(&mut self, step: Step) {
