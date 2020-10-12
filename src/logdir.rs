@@ -3,12 +3,15 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
 
+use crossbeam::queue::SegQueue;
 use walkdir::WalkDir;
 
 use crate::commit::{self, Commit};
 use crate::run::RunLoader;
 
 const EVENT_FILE_BASENAME_INFIX: &'static str = "tfevents";
+
+const LOADER_THREAD_COUNT: usize = 8;
 
 pub struct LogdirLoader<'a> {
     commit: &'a Commit,
@@ -89,6 +92,13 @@ impl<'a> LogdirLoader<'a> {
             add_to(&self.commit.blob_sequences, &to_add);
         }
 
+        struct WorkUnit<'a> {
+            loader: &'a mut RunLoader,
+            filenames: Vec<PathBuf>,
+            run_name: &'a String,
+        };
+
+        let work_units = SegQueue::new();
         for (run_name, event_files) in discoveries.iter_mut() {
             let run = self
                 .runs
@@ -109,13 +119,43 @@ impl<'a> LogdirLoader<'a> {
                     );
                 }
             }
+        }
+        for (run_name, run) in self.runs.iter_mut() {
+            let event_files = discoveries.get_mut(run_name).unwrap();
             let filenames = std::mem::take(event_files)
                 .into_iter()
                 .map(|d| d.event_file)
                 .collect::<Vec<_>>();
-            // TODO(@wchargin): Parallelize.
-            eprintln!("loading run {:?}...", run_name);
-            run.loader.reload(filenames, run_name, &self.commit);
+            eprintln!("enqueuing run {:?}...", run_name);
+            work_units.push(WorkUnit {
+                loader: &mut run.loader,
+                filenames,
+                run_name,
+            });
+        }
+
+        let commit = self.commit;
+        let q = &work_units;
+        let scope_result = crossbeam::scope(move |scope| {
+            let handles = (0..LOADER_THREAD_COUNT)
+                .map(|i| {
+                    let builder = scope.builder().name(format!("Reloader-{:03}", i));
+                    let handle = builder.spawn(move |_| {
+                        let wu = match q.pop() {
+                            None => return,
+                            Some(wu) => wu,
+                        };
+                        eprintln!("loading run {:?}...", wu.run_name);
+                        wu.loader.reload(wu.filenames, wu.run_name, commit);
+                        eprintln!("loaded run {:?}...", wu.run_name);
+                    });
+                    handle.expect("failed to spawn reloader thread")
+                })
+                .collect::<Vec<_>>();
+            drop(handles)
+        });
+        if let Err(e) = scope_result {
+            eprintln!("error in crossbeam scope: {:?}", e);
         }
         eprintln!("finished load cycle");
     }

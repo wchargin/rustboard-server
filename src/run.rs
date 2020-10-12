@@ -37,7 +37,7 @@ pub struct RunLoader {
     /// expected to be write-once.
     last_committed_start_time: Option<f64>,
     /// The event file loaders that comprise this run.
-    files: BTreeMap<PathBuf, EventFileReader<Box<dyn Read>>>,
+    files: BTreeMap<PathBuf, EventFileReader<Box<dyn Read + Send>>>,
     time_series: HashMap<String, TimeSeries>,
 }
 
@@ -411,7 +411,7 @@ impl RunLoader {
                             continue;
                         }
                     };
-                    let boxed_file: Box<dyn Read> = Box::new(BufReader::new(file));
+                    let boxed_file: Box<dyn Read + Send> = Box::new(BufReader::new(file));
                     let reader = EventFileReader::new(boxed_file);
                     v.insert(reader);
                 }
