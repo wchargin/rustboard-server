@@ -1,5 +1,6 @@
 pub mod commit;
 pub mod event_file;
+pub mod logdir;
 pub mod proto;
 pub mod reservoir;
 pub mod run;
