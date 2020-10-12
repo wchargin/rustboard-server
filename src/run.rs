@@ -278,8 +278,11 @@ impl RunLoader {
                 btree_map::Entry::Vacant(v) => {
                     let file = match File::open(v.key()) {
                         Ok(f) => f,
-                        // TODO(@wchargin): Surface some error handling here.
-                        Err(_) => continue,
+                        // TODO(@wchargin): Improve error handling.
+                        Err(e) => {
+                            eprintln!("failed to open event file {:?}: {:?}", v.key(), e);
+                            continue;
+                        }
                     };
                     let boxed_file: Box<dyn Read> = Box::new(BufReader::new(file));
                     let reader = EventFileReader::new(boxed_file);
@@ -308,10 +311,18 @@ impl RunLoader {
     fn reload_files(&mut self, run_name: &str, commit: &Commit) {
         for efl in self.files.values_mut() {
             loop {
+                use crate::event_file::ReadEventError;
+                use crate::tf_record::ReadRecordError;
                 let event = match efl.next(&mut self.start_time) {
                     Ok(ev) => ev,
-                    // TODO(@wchargin): Surface some error handling here.
-                    Err(_) => break,
+                    Err(ReadEventError::ReadRecordError(ReadRecordError::Truncated)) => {
+                        break;
+                    }
+                    // TODO(@wchargin): Improve error handling.
+                    Err(_) => {
+                        eprintln!("error reading {:?}", run_name);
+                        break;
+                    }
                 };
                 for (step, mut sv) in StageValue::from_event(event).into_iter() {
                     let tag: String = std::mem::take(&mut sv.tag);
