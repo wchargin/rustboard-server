@@ -19,6 +19,10 @@ type Step = i64;
 const RUN_GRAPH_NAME: &'static str = "__run_graph__";
 const GRAPHS_PLUGIN_NAME: &'static str = "graphs";
 const SCALARS_PLUGIN_NAME: &'static str = "scalars";
+const HISTOGRAMS_PLUGIN_NAME: &'static str = "histograms";
+const IMAGES_PLUGIN_NAME: &'static str = "images";
+const AUDIO_PLUGIN_NAME: &'static str = "audio";
+const TEXT_PLUGIN_NAME: &'static str = "text";
 
 const COMMIT_DELAY: Duration = Duration::from_secs(5);
 const COMMIT_WEIGHT: u64 = 1000; // cf. `TimeSeries::staged_weight()`
@@ -59,28 +63,33 @@ enum StagePayload {
 
 impl StagePayload {
     fn take_metadata(&mut self) -> pb::SummaryMetadata {
-        match self {
-            StagePayload::GraphDef(_) => pb::SummaryMetadata {
+        fn blank(plugin_name: &str, data_class: pb::DataClass) -> pb::SummaryMetadata {
+            pb::SummaryMetadata {
                 plugin_data: Some(pb::summary_metadata::PluginData {
-                    plugin_name: GRAPHS_PLUGIN_NAME.to_string(),
+                    plugin_name: plugin_name.to_string(),
                     content: Vec::new(),
                 }),
                 display_name: String::new(),
                 summary_description: String::new(),
-                data_class: pb::DataClass::BlobSequence.into(),
-            },
+                data_class: data_class.into(),
+            }
+        }
+
+        match self {
+            StagePayload::GraphDef(_) => blank(GRAPHS_PLUGIN_NAME, pb::DataClass::BlobSequence),
             StagePayload::SummaryValue { metadata, value } => match metadata.take() {
                 Some(md) if md.data_class != pb::DataClass::Unknown.into() => md,
                 _ if matches!(value, pb::summary::value::Value::SimpleValue(_)) => {
-                    pb::SummaryMetadata {
-                        plugin_data: Some(pb::summary_metadata::PluginData {
-                            plugin_name: SCALARS_PLUGIN_NAME.to_string(),
-                            content: Vec::new(),
-                        }),
-                        display_name: String::new(),
-                        summary_description: String::new(),
-                        data_class: pb::DataClass::Scalar.into(),
-                    }
+                    blank(SCALARS_PLUGIN_NAME, pb::DataClass::Scalar)
+                }
+                _ if matches!(value, pb::summary::value::Value::Image(_)) => {
+                    blank(IMAGES_PLUGIN_NAME, pb::DataClass::BlobSequence)
+                }
+                _ if matches!(value, pb::summary::value::Value::Audio(_)) => {
+                    blank(AUDIO_PLUGIN_NAME, pb::DataClass::BlobSequence)
+                }
+                _ if matches!(value, pb::summary::value::Value::Histo(_)) => {
+                    blank(HISTOGRAMS_PLUGIN_NAME, pb::DataClass::Tensor)
                 }
                 Some(mut md) => {
                     if let pb::SummaryMetadata {
@@ -93,6 +102,14 @@ impl StagePayload {
                     {
                         if plugin_name == SCALARS_PLUGIN_NAME {
                             md.data_class = pb::DataClass::Scalar.into();
+                        } else if plugin_name == IMAGES_PLUGIN_NAME {
+                            md.data_class = pb::DataClass::BlobSequence.into();
+                        } else if plugin_name == AUDIO_PLUGIN_NAME {
+                            md.data_class = pb::DataClass::BlobSequence.into();
+                        } else if plugin_name == HISTOGRAMS_PLUGIN_NAME {
+                            md.data_class = pb::DataClass::Tensor.into();
+                        } else if plugin_name == TEXT_PLUGIN_NAME {
+                            md.data_class = pb::DataClass::Tensor.into();
                         }
                     };
                     md
@@ -142,8 +159,20 @@ impl TimeSeries {
             DataClass::Scalar => {
                 self.commit_to(run_name, tag_name, &commit.scalars, Self::commit_scalar)
             }
-            DataClass::Tensor => unimplemented!(),
-            DataClass::BlobSequence => unimplemented!(),
+            DataClass::Tensor => {
+                self.commit_to(run_name, tag_name, &commit.tensors, Self::commit_tensor)
+            }
+            DataClass::BlobSequence => {
+                let plugin_name = self
+                    .metadata
+                    .plugin_data
+                    .as_ref()
+                    .map(|pd| pd.plugin_name.as_str());
+                let is_audio = plugin_name == Some(AUDIO_PLUGIN_NAME);
+                self.commit_to(run_name, tag_name, &commit.blob_sequences, |sv| {
+                    Self::commit_blob_sequence(sv, is_audio)
+                })
+            }
         }
         self.next_commit = Instant::now() + COMMIT_DELAY;
     }
@@ -207,6 +236,104 @@ impl TimeSeries {
                         }
                     }
                     _ => Err(DataLoss),
+                }
+            }
+            _ => Err(DataLoss),
+        };
+        (sv.wall_time, result)
+    }
+
+    fn commit_tensor(sv: StageValue) -> commit::Datum<commit::TensorValue> {
+        use commit::{DataLoss, TensorValue};
+        use pb::summary::value::Value;
+        let result: Result<TensorValue, DataLoss> = match sv.payload {
+            StagePayload::SummaryValue {
+                value: Value::Tensor(tp),
+                ..
+            } => Ok(TensorValue(tp)),
+            StagePayload::SummaryValue {
+                value: Value::Histo(h),
+                ..
+            } => {
+                let h: pb::HistogramProto = h;
+                let mut tp: pb::TensorProto = pb::TensorProto::default();
+                let n = usize::min(h.bucket.len(), h.bucket_limit.len());
+                fn dim(size: i64) -> pb::tensor_shape_proto::Dim {
+                    pb::tensor_shape_proto::Dim {
+                        size,
+                        ..pb::tensor_shape_proto::Dim::default()
+                    }
+                }
+                tp.dtype = pb::DataType::DtDouble.into();
+                tp.tensor_shape = Some(pb::TensorShapeProto {
+                    dim: vec![dim(n as i64), dim(3)],
+                    ..pb::TensorShapeProto::default()
+                });
+                // [[left1, right1, count1], [left2, right2, count2], ...]
+                let mut buf = vec![0.0; n * 3];
+                if n > 0 {
+                    buf[0] = h.min; // lower bound for sample `0`
+                    for (i, limit) in h.bucket_limit[..n - 1].iter().enumerate() {
+                        buf[3 * i + 1] = *limit; // upper bound for sample `i`
+                        buf[3 * (i + 1)] = *limit; // lower bound for sample `i + 1`
+                    }
+                    buf[3 * (n - 1) + 1] = h.max; // upper bound for sample `n - 1`
+
+                    for (i, count) in h.bucket.iter().enumerate() {
+                        buf[(3 * i) + 2] = *count;
+                    }
+                }
+                tp.double_val = buf;
+                Ok(TensorValue(tp))
+            }
+            _ => Err(DataLoss),
+        };
+        (sv.wall_time, result)
+    }
+
+    fn commit_blob_sequence(
+        sv: StageValue,
+        is_audio: bool,
+    ) -> commit::Datum<commit::BlobSequenceValue> {
+        use commit::{BlobSequenceValue, DataLoss};
+        use pb::summary::value::Value;
+        let result: Result<BlobSequenceValue, DataLoss> = match sv.payload {
+            StagePayload::GraphDef(gd) => Ok(BlobSequenceValue(vec![gd])),
+            StagePayload::SummaryValue {
+                value: Value::Image(im),
+                ..
+            } => {
+                let w = format!("{}", im.width).into_bytes();
+                let h = format!("{}", im.height).into_bytes();
+                let buf = im.encoded_image_string;
+                Ok(BlobSequenceValue(vec![w, h, buf]))
+            }
+            StagePayload::SummaryValue {
+                value: Value::Audio(au),
+                ..
+            } => Ok(BlobSequenceValue(vec![au.encoded_audio_string])),
+            StagePayload::SummaryValue {
+                value: Value::Tensor(tp),
+                ..
+            } => {
+                let mut tp: pb::TensorProto = tp; // rust-analyzer has trouble here for some reason
+                if is_audio
+                    && (&tp.tensor_shape)
+                        .as_ref()
+                        .map(|ts| ts.dim.len() == 2 && ts.dim[1].size == 2)
+                        .unwrap_or(false)
+                {
+                    // Extract just the actual audio clips along the first axis.
+                    let audio: Vec<Vec<u8>> = tp
+                        .string_val
+                        .chunks_exact_mut(2)
+                        .map(|chunk| std::mem::take(&mut chunk[0]))
+                        .collect();
+                    Ok(BlobSequenceValue(audio))
+                } else if tp.tensor_shape.map(|ts| ts.dim.len()) == Some(1) {
+                    Ok(BlobSequenceValue(tp.string_val))
+                } else {
+                    Err(DataLoss)
                 }
             }
             _ => Err(DataLoss),
