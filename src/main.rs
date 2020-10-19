@@ -153,16 +153,112 @@ impl TensorBoardDataProvider for DataProvider<'static> {
 
     async fn list_tensors(
         &self,
-        _request: Request<data::ListTensorsRequest>,
+        req: Request<data::ListTensorsRequest>,
     ) -> Result<Response<data::ListTensorsResponse>, Status> {
-        todo!()
+        let mut req = req.into_inner();
+        let mut res: data::ListTensorsResponse = Default::default();
+        let (run_filter, tag_filter) = parse_rtf(req.run_tag_filter.take());
+        let want_plugin = req
+            .plugin_filter
+            .map(|pf| pf.plugin_name)
+            .unwrap_or_default();
+        let store = self.head.tensors.read();
+        for (run, tag_map) in &*store {
+            if !run_filter.want(run) {
+                continue;
+            }
+            let tags = tag_map.read();
+            let mut run_res = data::list_tensors_response::RunEntry::default();
+            for (tag, ts) in &*tags {
+                if !tag_filter.want(tag) {
+                    continue;
+                }
+                if ts
+                    .metadata
+                    .plugin_data
+                    .as_ref()
+                    .map(|pd| pd.plugin_name.as_str())
+                    != Some(want_plugin.as_str())
+                {
+                    continue;
+                }
+                let mut tag_res = data::list_tensors_response::TagEntry::default();
+                tag_res.tag_name = tag.clone();
+                tag_res.time_series = Some(data::TensorTimeSeries {
+                    max_step: ts.values.last().map(|(step, _)| *step).unwrap_or(0),
+                    max_wall_time: ts
+                        .values
+                        .iter()
+                        .map(|(_, (wt, _))| *wt)
+                        .max_by(|x, y| x.partial_cmp(y).unwrap())
+                        .unwrap_or(-f64::INFINITY),
+                    summary_metadata: Some(ts.metadata.clone()),
+                });
+                run_res.tags.push(tag_res);
+            }
+            if !run_res.tags.is_empty() {
+                run_res.run_name = run.clone();
+                res.runs.push(run_res);
+            }
+        }
+        Ok(Response::new(res))
     }
 
     async fn read_tensors(
         &self,
-        _request: Request<data::ReadTensorsRequest>,
+        req: Request<data::ReadTensorsRequest>,
     ) -> Result<Response<data::ReadTensorsResponse>, Status> {
-        todo!()
+        let mut req = req.into_inner();
+        let mut res: data::ReadTensorsResponse = Default::default();
+        let (run_filter, tag_filter) = parse_rtf(req.run_tag_filter.take());
+        let want_plugin = req
+            .plugin_filter
+            .map(|pf| pf.plugin_name)
+            .unwrap_or_default();
+        let store = self.head.tensors.read();
+        for (run, tag_map) in &*store {
+            if !run_filter.want(run) {
+                continue;
+            }
+            let tags = tag_map.read();
+            let mut run_res = data::read_tensors_response::RunEntry::default();
+            for (tag, ts) in &*tags {
+                if !tag_filter.want(tag) {
+                    continue;
+                }
+                if ts
+                    .metadata
+                    .plugin_data
+                    .as_ref()
+                    .map(|pd| pd.plugin_name.as_str())
+                    != Some(want_plugin.as_str())
+                {
+                    continue;
+                }
+                let mut tag_res: data::read_tensors_response::TagEntry = Default::default();
+                tag_res.tag_name = tag.clone();
+                let mut data: data::TensorData = Default::default();
+                for (step, (wall_time, maybe_value)) in &ts.values {
+                    match maybe_value {
+                        Ok(value) => {
+                            data.step.push(*step);
+                            data.wall_time.push(*wall_time);
+                            data.value.push(value.0.clone());
+                        }
+                        Err(_) => {
+                            eprintln!("dropping corrupt datum at step {}", *step);
+                        }
+                    };
+                }
+                tag_res.data = Some(data);
+                run_res.tags.push(tag_res);
+            }
+            if !run_res.tags.is_empty() {
+                run_res.run_name = run.clone();
+                res.runs.push(run_res);
+            }
+        }
+        Ok(Response::new(res))
     }
 
     async fn list_blob_sequences(
