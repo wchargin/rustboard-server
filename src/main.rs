@@ -151,6 +151,20 @@ impl TensorBoardDataProvider for DataProvider<'static> {
         Ok(Response::new(res))
     }
 
+    async fn list_tensors(
+        &self,
+        _request: Request<data::ListTensorsRequest>,
+    ) -> Result<Response<data::ListTensorsResponse>, Status> {
+        todo!()
+    }
+
+    async fn read_tensors(
+        &self,
+        _request: Request<data::ReadTensorsRequest>,
+    ) -> Result<Response<data::ReadTensorsResponse>, Status> {
+        todo!()
+    }
+
     async fn list_blob_sequences(
         &self,
         _request: Request<data::ListBlobSequencesRequest>,
