@@ -78,7 +78,7 @@ impl StagePayload {
         match self {
             StagePayload::GraphDef(_) => blank(GRAPHS_PLUGIN_NAME, pb::DataClass::BlobSequence),
             StagePayload::SummaryValue { metadata, value } => match metadata.take() {
-                Some(md) if md.data_class != pb::DataClass::Unknown.into() => md,
+                Some(md) if md.data_class != i32::from(pb::DataClass::Unknown) => md,
                 _ if matches!(value, pb::summary::value::Value::SimpleValue(_)) => {
                     blank(SCALARS_PLUGIN_NAME, pb::DataClass::Scalar)
                 }

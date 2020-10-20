@@ -1,3 +1,4 @@
+pub mod blob_key;
 pub mod commit;
 pub mod event_file;
 pub mod logdir;
