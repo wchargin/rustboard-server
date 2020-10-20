@@ -141,13 +141,11 @@ impl<'a> LogdirLoader<'a> {
                 .map(|i| {
                     let builder = scope.builder().name(format!("Reloader-{:03}", i));
                     let handle = builder.spawn(move |_| {
-                        let wu = match q.pop() {
-                            None => return,
-                            Some(wu) => wu,
-                        };
-                        eprintln!("loading run {:?}...", wu.run_name);
-                        wu.loader.reload(wu.filenames, wu.run_name, commit);
-                        eprintln!("loaded run {:?}...", wu.run_name);
+                        while let Some(wu) = q.pop() {
+                            eprintln!("loading run {:?}...", wu.run_name);
+                            wu.loader.reload(wu.filenames, wu.run_name, commit);
+                            eprintln!("loaded run {:?}...", wu.run_name);
+                        }
                     });
                     handle.expect("failed to spawn reloader thread")
                 })
