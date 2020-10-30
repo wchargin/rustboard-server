@@ -49,7 +49,6 @@ pub struct TimeSeries {
 
 struct StageValue {
     wall_time: f64,
-    tag: String,
     payload: StagePayload,
 }
 
@@ -341,15 +340,15 @@ impl TimeSeries {
 }
 
 impl StageValue {
-    fn from_event(e: pb::Event) -> Vec<(Step, StageValue)> {
+    fn from_event(e: pb::Event) -> Vec<(Step, String, StageValue)> {
         let step = e.step;
         let wall_time = e.wall_time;
         match e.what {
             Some(pb::event::What::GraphDef(gd)) => vec![(
                 step,
+                RUN_GRAPH_NAME.to_string(),
                 StageValue {
                     wall_time,
-                    tag: RUN_GRAPH_NAME.to_string(),
                     payload: StagePayload::GraphDef(gd),
                 },
             )],
@@ -357,18 +356,14 @@ impl StageValue {
                 .value
                 .into_iter()
                 .filter_map(|v| {
-                    let stage_value = (
-                        step,
-                        StageValue {
-                            wall_time,
-                            tag: v.tag,
-                            payload: StagePayload::SummaryValue {
-                                metadata: v.metadata,
-                                value: v.value?,
-                            },
+                    let stage_value = StageValue {
+                        wall_time,
+                        payload: StagePayload::SummaryValue {
+                            metadata: v.metadata,
+                            value: v.value?,
                         },
-                    );
-                    Some(stage_value)
+                    };
+                    Some((step, v.tag, stage_value))
                 })
                 .collect(),
             _ => Vec::new(),
@@ -449,8 +444,7 @@ impl RunLoader {
                         break;
                     }
                 };
-                for (step, mut sv) in StageValue::from_event(event).into_iter() {
-                    let tag: String = std::mem::take(&mut sv.tag);
+                for (step, tag, mut sv) in StageValue::from_event(event).into_iter() {
                     // Clone the tag so that we can pass it to `ts.commit` below. Could get
                     // cleverer (make `rsv.offer` return a reference to the newly stored item and
                     // maybe futz with cows), but this inefficiency is probably fine.
