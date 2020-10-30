@@ -17,13 +17,13 @@ use crate::reservoir::StageReservoir;
 
 type Step = i64;
 
-const RUN_GRAPH_NAME: &'static str = "__run_graph__";
-const GRAPHS_PLUGIN_NAME: &'static str = "graphs";
-const SCALARS_PLUGIN_NAME: &'static str = "scalars";
-const HISTOGRAMS_PLUGIN_NAME: &'static str = "histograms";
-const IMAGES_PLUGIN_NAME: &'static str = "images";
-const AUDIO_PLUGIN_NAME: &'static str = "audio";
-const TEXT_PLUGIN_NAME: &'static str = "text";
+const RUN_GRAPH_NAME: &str = "__run_graph__";
+const GRAPHS_PLUGIN_NAME: &str = "graphs";
+const SCALARS_PLUGIN_NAME: &str = "scalars";
+const HISTOGRAMS_PLUGIN_NAME: &str = "histograms";
+const IMAGES_PLUGIN_NAME: &str = "images";
+const AUDIO_PLUGIN_NAME: &str = "audio";
+const TEXT_PLUGIN_NAME: &str = "text";
 
 const COMMIT_DELAY: Duration = Duration::from_secs(5);
 const COMMIT_WEIGHT: u64 = 1000; // cf. `TimeSeries::staged_weight()`

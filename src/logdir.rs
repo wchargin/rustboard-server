@@ -9,7 +9,7 @@ use walkdir::WalkDir;
 use crate::commit::{self, Commit};
 use crate::run::RunLoader;
 
-const EVENT_FILE_BASENAME_INFIX: &'static str = "tfevents";
+const EVENT_FILE_BASENAME_INFIX: &str = "tfevents";
 
 const LOADER_THREAD_COUNT: usize = 8;
 
