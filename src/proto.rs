@@ -1,3 +1,4 @@
+#[allow(clippy::all)]
 pub mod tensorboard {
     tonic::include_proto!("tensorboard");
     pub mod data {
