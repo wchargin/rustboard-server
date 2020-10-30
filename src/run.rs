@@ -191,7 +191,7 @@ impl TimeSeries {
             Some(cts) => cts,
             None => tag_map
                 .entry(tag_name.to_string())
-                .or_insert(commit::TimeSeries::new((*self.metadata).clone())),
+                .or_insert_with(|| commit::TimeSeries::new((*self.metadata).clone())),
         };
         self.rsv.commit_map(&mut cts.values, f)
     }

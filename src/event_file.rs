@@ -61,7 +61,7 @@ impl<R: Read> EventFileReader<R> {
             Ok(ev) => ev,
             Err(err) => {
                 record.checksum()?;
-                return Err(err)?;
+                return Err(err.into());
             }
         };
         let wall_time = event.wall_time;
