@@ -42,6 +42,12 @@ impl TfRecordState {
     }
 }
 
+impl Default for TfRecordState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// A TFRecord with a data buffer and expected checksum. The checksum may or may not match the
 /// actual contents.
 #[derive(Debug)]

@@ -494,3 +494,9 @@ impl RunLoader {
         *last_committed_start_time = Some(start_time);
     }
 }
+
+impl Default for RunLoader {
+    fn default() -> Self {
+        Self::new()
+    }
+}

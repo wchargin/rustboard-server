@@ -10,6 +10,7 @@ pub type WallTime = f64;
 pub type Run = String;
 pub type Tag = String;
 
+#[derive(Default)]
 pub struct Commit {
     pub scalars: Store<ScalarValue>,
     pub tensors: Store<TensorValue>,
@@ -19,12 +20,7 @@ pub struct Commit {
 
 impl Commit {
     pub fn new() -> Self {
-        Self {
-            scalars: RwLock::new(HashMap::new()),
-            tensors: RwLock::new(HashMap::new()),
-            blob_sequences: RwLock::new(HashMap::new()),
-            start_times: RwLock::new(HashMap::new()),
-        }
+        Self::default()
     }
 }
 
