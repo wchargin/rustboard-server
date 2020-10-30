@@ -1,5 +1,6 @@
 use parking_lot::RwLock;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::proto::tensorboard as pb;
 
@@ -48,4 +49,4 @@ pub struct DataLoss;
 
 pub struct ScalarValue(pub f64);
 pub struct TensorValue(pub pb::TensorProto);
-pub struct BlobSequenceValue(pub Vec<Vec<u8>>);
+pub struct BlobSequenceValue(pub Vec<Arc<[u8]>>);

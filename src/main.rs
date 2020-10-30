@@ -7,6 +7,7 @@ use std::default::Default;
 use std::hash::Hash;
 use std::path::PathBuf;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 use tonic::{transport::Server, Request, Response, Status};
@@ -451,17 +452,18 @@ impl TensorBoardDataProvider for DataProvider<'static> {
                     bk.run, bk.tag, bk.step
                 ))
             })?;
-        let blob = datum.0.get(bk.index).ok_or_else(|| {
+        let blobs = &datum.0;
+        let blob = blobs.get(bk.index).ok_or_else(|| {
             Status::not_found(format!(
                 "blob sequence at run {:?}, tag {:?}, step {:?} has no index {} (length: {})",
                 bk.run,
                 bk.tag,
                 bk.step,
                 bk.index,
-                datum.0.len()
+                blobs.len()
             ))
         })?;
-        let blob = blob.clone();
+        let blob = Arc::clone(blob);
         drop(tag_map);
         drop(store);
 

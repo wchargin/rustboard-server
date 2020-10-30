@@ -6,6 +6,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::io::Read;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 
@@ -294,8 +295,13 @@ impl TimeSeries {
     ) -> commit::Datum<commit::BlobSequenceValue> {
         use commit::{BlobSequenceValue, DataLoss};
         use pb::summary::value::Value;
+
+        fn arcs(blobs: Vec<Vec<u8>>) -> Vec<Arc<[u8]>> {
+            blobs.into_iter().map(Arc::from).collect()
+        }
+
         let result: Result<BlobSequenceValue, DataLoss> = match sv.payload {
-            StagePayload::GraphDef(gd) => Ok(BlobSequenceValue(vec![gd])),
+            StagePayload::GraphDef(gd) => Ok(BlobSequenceValue(vec![Arc::from(gd)])),
             StagePayload::SummaryValue {
                 value: Value::Image(im),
                 ..
@@ -303,12 +309,12 @@ impl TimeSeries {
                 let w = format!("{}", im.width).into_bytes();
                 let h = format!("{}", im.height).into_bytes();
                 let buf = im.encoded_image_string;
-                Ok(BlobSequenceValue(vec![w, h, buf]))
+                Ok(BlobSequenceValue(arcs(vec![w, h, buf])))
             }
             StagePayload::SummaryValue {
                 value: Value::Audio(au),
                 ..
-            } => Ok(BlobSequenceValue(vec![au.encoded_audio_string])),
+            } => Ok(BlobSequenceValue(vec![Arc::from(au.encoded_audio_string)])),
             StagePayload::SummaryValue {
                 value: Value::Tensor(tp),
                 ..
@@ -326,9 +332,9 @@ impl TimeSeries {
                         .chunks_exact_mut(2)
                         .map(|chunk| std::mem::take(&mut chunk[0]))
                         .collect();
-                    Ok(BlobSequenceValue(audio))
+                    Ok(BlobSequenceValue(arcs(audio)))
                 } else if tp.tensor_shape.map(|ts| ts.dim.len()) == Some(1) {
-                    Ok(BlobSequenceValue(tp.string_val))
+                    Ok(BlobSequenceValue(arcs(tp.string_val)))
                 } else {
                     Err(DataLoss)
                 }
