@@ -77,44 +77,42 @@ impl StagePayload {
 
         match self {
             StagePayload::GraphDef(_) => blank(GRAPHS_PLUGIN_NAME, pb::DataClass::BlobSequence),
-            StagePayload::SummaryValue { metadata, value } => match metadata.take() {
-                Some(md) if md.data_class != i32::from(pb::DataClass::Unknown) => md,
-                _ if matches!(value, pb::summary::value::Value::SimpleValue(_)) => {
+            StagePayload::SummaryValue { metadata, value } => match (metadata.take(), value) {
+                (Some(md), _) if md.data_class != i32::from(pb::DataClass::Unknown) => md,
+                (_, pb::summary::value::Value::SimpleValue(_)) => {
                     blank(SCALARS_PLUGIN_NAME, pb::DataClass::Scalar)
                 }
-                _ if matches!(value, pb::summary::value::Value::Image(_)) => {
+                (_, pb::summary::value::Value::Image(_)) => {
                     blank(IMAGES_PLUGIN_NAME, pb::DataClass::BlobSequence)
                 }
-                _ if matches!(value, pb::summary::value::Value::Audio(_)) => {
+                (_, pb::summary::value::Value::Audio(_)) => {
                     blank(AUDIO_PLUGIN_NAME, pb::DataClass::BlobSequence)
                 }
-                _ if matches!(value, pb::summary::value::Value::Histo(_)) => {
+                (_, pb::summary::value::Value::Histo(_)) => {
                     blank(HISTOGRAMS_PLUGIN_NAME, pb::DataClass::Tensor)
                 }
-                Some(mut md) => {
+                (Some(mut md), _) => {
                     if let pb::SummaryMetadata {
-                        plugin_data:
-                            Some(pb::summary_metadata::PluginData {
-                                ref plugin_name, ..
-                            }),
+                        plugin_data: Some(ref pd),
                         ..
                     } = md
                     {
-                        if plugin_name == SCALARS_PLUGIN_NAME {
-                            md.data_class = pb::DataClass::Scalar.into();
-                        } else if plugin_name == IMAGES_PLUGIN_NAME {
-                            md.data_class = pb::DataClass::BlobSequence.into();
-                        } else if plugin_name == AUDIO_PLUGIN_NAME {
-                            md.data_class = pb::DataClass::BlobSequence.into();
-                        } else if plugin_name == HISTOGRAMS_PLUGIN_NAME {
-                            md.data_class = pb::DataClass::Tensor.into();
-                        } else if plugin_name == TEXT_PLUGIN_NAME {
-                            md.data_class = pb::DataClass::Tensor.into();
-                        }
-                    };
+                        match pd.plugin_name.as_ref() {
+                            SCALARS_PLUGIN_NAME => {
+                                md.data_class = pb::DataClass::Scalar.into();
+                            }
+                            IMAGES_PLUGIN_NAME | AUDIO_PLUGIN_NAME => {
+                                md.data_class = pb::DataClass::BlobSequence.into();
+                            }
+                            HISTOGRAMS_PLUGIN_NAME | TEXT_PLUGIN_NAME => {
+                                md.data_class = pb::DataClass::Tensor.into();
+                            }
+                            _ => {}
+                        };
+                    }
                     md
                 }
-                None => pb::SummaryMetadata::default(),
+                (None, _) => pb::SummaryMetadata::default(),
             },
         }
     }
